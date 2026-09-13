@@ -1,0 +1,67 @@
+name: brew bump
+
+on:
+  repository_dispatch:
+    types:
+      - package-release
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package token such as arkeys
+        required: true
+        type: string
+      tag:
+        description: Release tag such as v0.2.0
+        required: true
+        type: string
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash -xeuo pipefail {0}
+
+jobs:
+  bump:
+    name: Bump ${{ github.event.client_payload.package || inputs.package }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@main
+
+      - name: Set up git
+        id: git_setup
+        uses: Homebrew/actions/git-user-config@main
+
+      - name: Mint publisher token
+        id: publisher
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.PUBLISHER_CLIENT_ID }}
+          private-key: ${{ secrets.PUBLISHER_PRIVATE_KEY }}
+          repositories: homebrew-tap
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Bump package
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ steps.publisher.outputs.token }}
+          HOMEBREW_GIT_COMMITTER_NAME: ${{ steps.git_setup.outputs.name }}
+          HOMEBREW_GIT_COMMITTER_EMAIL: ${{ steps.git_setup.outputs.email }}
+          TAP_NAME: ${{ steps.set-up-homebrew.outputs.tap-name }}
+          PACKAGE: ${{ github.event.client_payload.package || inputs.package }}
+          TAG: ${{ github.event.client_payload.tag || inputs.tag }}
+        run: |
+          version="${TAG#v}"
+          tap_path="$(brew --repository "${TAP_NAME}")"
+          if [[ -f "${tap_path}/Casks/${PACKAGE}.rb" ]]; then
+            brew bump-cask-pr --no-browse --no-fork "${TAP_NAME}/${PACKAGE}" --version "${version}"
+          elif [[ -f "${tap_path}/Formula/${PACKAGE}.rb" ]]; then
+            brew bump-formula-pr --no-browse --no-fork "${TAP_NAME}/${PACKAGE}" --version "${version}"
+          else
+            echo "no cask or formula named ${PACKAGE}" >&2
+            exit 1
+          fi
