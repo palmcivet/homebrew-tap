@@ -22,11 +22,25 @@ defaults:
     shell: bash -xeuo pipefail {0}
 
 jobs:
-  bump:
+  test:
+    name: Test ${{ github.event.client_payload.package || inputs.package }}
+    uses: ./.github/workflows/test.yml
+    with:
+      package: ${{ github.event.client_payload.package || inputs.package }}
+      tag: ${{ github.event.client_payload.tag || inputs.tag }}
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      pull-requests: read
+
+  pr:
     name: Bump ${{ github.event.client_payload.package || inputs.package }}
+    needs: test
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
+      pull-requests: write
     steps:
       - name: Set up Homebrew
         id: set-up-homebrew
@@ -36,19 +50,9 @@ jobs:
         id: git_setup
         uses: Homebrew/actions/git-user-config@main
 
-      - name: Mint publisher token
-        id: publisher
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ vars.PUBLISHER_CLIENT_ID }}
-          private-key: ${{ secrets.PUBLISHER_PRIVATE_KEY }}
-          repositories: homebrew-tap
-          permission-contents: write
-          permission-pull-requests: write
-
       - name: Bump package
         env:
-          HOMEBREW_GITHUB_API_TOKEN: ${{ steps.publisher.outputs.token }}
+          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_GIT_COMMITTER_NAME: ${{ steps.git_setup.outputs.name }}
           HOMEBREW_GIT_COMMITTER_EMAIL: ${{ steps.git_setup.outputs.email }}
           TAP_NAME: ${{ steps.set-up-homebrew.outputs.tap-name }}

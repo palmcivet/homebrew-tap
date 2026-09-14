@@ -5,6 +5,16 @@ on:
     branches:
       - main
   pull_request:
+  workflow_call:
+    inputs:
+      package:
+        description: Package token such as arkeys
+        required: true
+        type: string
+      tag:
+        description: Release tag such as v0.2.0
+        required: true
+        type: string
 
 defaults:
   run:
@@ -12,16 +22,7 @@ defaults:
 
 jobs:
   test-bot:
-    strategy:
-      matrix:
-        os: [macos-15]
-        include:
-          - os: ubuntu-latest
-            container:
-              image: ghcr.io/homebrew/brew:main
-              options: --privileged
-    runs-on: ${{ matrix.os }}
-    container: ${{ fromJSON(toJSON(matrix.container)) }}
+    runs-on: macos-15
     permissions:
       actions: read
       checks: read
@@ -38,21 +39,51 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ steps.set-up-homebrew.outputs.gems-path }}
-          key: ${{ matrix.os }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
-          restore-keys: ${{ matrix.os }}-rubygems-
+          key: macos-15-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          restore-keys: macos-15-rubygems-
 
       - run: brew test-bot --only-cleanup-before
 
       - run: brew test-bot --only-setup
 
+      - name: Apply release bump
+        if: github.event_name == 'workflow_call'
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_NAME: ${{ steps.set-up-homebrew.outputs.tap-name }}
+          PACKAGE: ${{ inputs.package }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          version="${TAG#v}"
+          tap_path="$(brew --repository "${TAP_NAME}")"
+          if [[ -f "${tap_path}/Casks/${PACKAGE}.rb" ]]; then
+            brew bump-cask-pr --write-only --no-browse "${TAP_NAME}/${PACKAGE}" --version "${version}"
+          elif [[ -f "${tap_path}/Formula/${PACKAGE}.rb" ]]; then
+            brew bump-formula-pr --write-only --no-browse "${TAP_NAME}/${PACKAGE}" --version "${version}"
+          else
+            echo "no cask or formula named ${PACKAGE}" >&2
+            exit 1
+          fi
+
       - run: brew test-bot --only-tap-syntax
 
-      - run: brew test-bot --only-formulae
-        if: github.event_name == 'pull_request'
-
-      - name: Upload bottles as artifact
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v7
-        with:
-          name: bottles_${{ matrix.os }}
-          path: "*.bottle.*"
+      - name: Test casks
+        if: github.event_name != 'push'
+        env:
+          TAP_NAME: ${{ steps.set-up-homebrew.outputs.tap-name }}
+          PACKAGE: ${{ inputs.package }}
+        run: |
+          tap_path="$(brew --repository "${TAP_NAME}")"
+          shopt -s nullglob
+          if [[ -n "${PACKAGE}" ]]; then
+            casks=("${tap_path}/Casks/${PACKAGE}.rb")
+          else
+            casks=("${tap_path}"/Casks/*.rb)
+          fi
+          for cask_file in "${casks[@]}"; do
+            [[ -f "${cask_file}" ]] || continue
+            token="$(basename "${cask_file}" .rb)"
+            brew audit --cask "${TAP_NAME}/${token}"
+            brew install --cask "${TAP_NAME}/${token}"
+            brew uninstall --cask "${TAP_NAME}/${token}"
+          done
