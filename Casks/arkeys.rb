@@ -1,6 +1,6 @@
 cask "arkeys" do
-  version "0.1.0"
-  sha256 "4ec8627d22b01bab972c4a1cec78d53be6582bc80131cac8348438bb2883ee58"
+  version "0.1.1"
+  sha256 "284b23c4b495665064fb4c893ab750e73ab12f39e9a2d1d06f08e8a69b90c549"
 
   url "https://github.com/palmcivet/Arkeys/releases/download/v#{version}/Arkeys-#{version}.zip"
   name "Arkeys"
