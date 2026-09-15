@@ -26,6 +26,7 @@ jobs:
     name: Test ${{ github.event.client_payload.package || inputs.package }}
     uses: ./.github/workflows/test.yml
     with:
+      apply_bump: true
       package: ${{ github.event.client_payload.package || inputs.package }}
       tag: ${{ github.event.client_payload.tag || inputs.tag }}
     permissions:
@@ -62,7 +63,7 @@ jobs:
           version="${TAG#v}"
           tap_path="$(brew --repository "${TAP_NAME}")"
           if [[ -f "${tap_path}/Casks/${PACKAGE}.rb" ]]; then
-            brew bump-cask-pr --no-browse --no-fork "${TAP_NAME}/${PACKAGE}" --version "${version}"
+            brew bump-cask-pr --no-audit --no-browse --no-fork "${TAP_NAME}/${PACKAGE}" --version "${version}"
           elif [[ -f "${tap_path}/Formula/${PACKAGE}.rb" ]]; then
             brew bump-formula-pr --no-browse --no-fork "${TAP_NAME}/${PACKAGE}" --version "${version}"
           else
